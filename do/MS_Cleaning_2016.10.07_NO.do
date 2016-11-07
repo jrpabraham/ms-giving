@@ -5,6 +5,12 @@ PROJECT:		Moral Stock
 PURPOSE: 		Import and clean data
 INPUT: 			MS_Pilot.csv
 OUTPUT: 		MS_Pilot.dta
+DESC:			This is the .do file for
+				conducting data analysis of
+				the MS study. Running this .do
+				will download the data and all
+				dependencies and display
+				results in the Stata GUI.
 **********************************************/
 
 *0. Clearing, setting directories, importing data
@@ -17,10 +23,10 @@ OUTPUT: 		MS_Pilot.dta
 	ssc install revrs
 
 	*Pull data
-	copy https://raw.githubusercontent.com/jrpabraham/ms-giving/master/MS_Data.csv ., replace
+	copy https://gist.githubusercontent.com/jrpabraham/1d75b0f129b29edcddb6c5ac7412b306/raw/9094865e0e34733fafb259bde5f80c4d0e189001/MS_Pilot.csv ., replace
 
 	*Import and label data
-	import delimited "MS_Data.csv", varnames(1) clear
+	import delimited "MS_Pilot.csv", varnames(1) clear
 
 	foreach var of varlist * {
 
@@ -74,6 +80,7 @@ OUTPUT: 		MS_Pilot.dta
 
 	ren q5 Loc
 	la def loc 1 "Urban" 2 "Suburban" 3 "Rural"
+	la val Loc loc
 
 	gen LocUrb = Loc == 1 if ~mi(Loc)
 	gen LocSub = Loc == 2 if ~mi(Loc)
@@ -99,13 +106,14 @@ OUTPUT: 		MS_Pilot.dta
 	ren q9 Pol
 	recode Pol (1=1) (2=0)
 	la def pol 0 "More of a conservative" 1 "More of a liberal"
+	la val Pol pol
 
 	*Treatment: Exposure to the question "Are you racist"?
 	destring q10, replace
 	gen TreExpRac = 1 if q10 !=.
 	recode TreExpRac .=0
 	label define treexprac 1 "Received questions about racism" 0 "Didn't receive question about racism"
-	lab var TreExpRac treexprac
+	lab val TreExpRac treexprac
 
 	*Are you Racist
 	rename q10 ExpRac
@@ -118,7 +126,7 @@ OUTPUT: 		MS_Pilot.dta
 	rename q13 TreIat
 	recode TreIat (2=1)(.=0)
 	label define treiat 1 "Received IAT results implying racism" 0 "Didn't receive IAT results implying racism"
-	lab var TreIat treiat
+	lab val TreIat treiat
 
 	*Affect and self-esteem
 
@@ -153,12 +161,13 @@ OUTPUT: 		MS_Pilot.dta
 	destring q21 q22, replace
 
 	ren q21 TroSwi
+	recode TroSwi (2=0)
 	ren q22 TroFat
+	recode TroFat (2=0)
 
 	la def tro 1 "Yes, divert the trolley" 0 "Do nothing"
-	la val TroSwi two
-	la val TroFat two
-
+	la val TroSwi tro
+	la val TroFat tro
 	gen TroRev = TroSwi == 1 & TroFat == 0
 
 	*Policy support
@@ -223,7 +232,7 @@ OUTPUT: 		MS_Pilot.dta
 	label variable ChaDon    "Cents donated to charity"
 	label variable TroSwi    "Switch trolley problem"
 	label variable TroFat    "Fat man trolley problem"
-	label variable TroRev	 "Omission bias"
+	label variable TroRev	 "Trolley problems reversal"
 	label variable RedRes    "As a country's wealth increases, more of its resources should be channeled"
 	label variable RedBen    "Giving to others usually benefits the givers as well"
 	label variable RedObl    "Those with more resources have more obligations toward their fellow human"
@@ -249,10 +258,8 @@ OUTPUT: 		MS_Pilot.dta
 	keep responseid duration Lan LanOtr LanEng Gen Edu Col Age* Loc* Inc* Emp UnEmp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis NegSum SelEst ChaDon TroSwi TroFat TroRev RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum
 	order responseid duration Lan LanOtr LanEng Gen Edu Col Age* Loc* Inc* Emp UnEmp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis NegSum SelEst ChaDon TroSwi TroFat TroRev RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum
 
-
 *2. Test for selection
-
-	loc outcomes "ChaDon RedSum AffSum TroRev NegSum SelEst"
+	loc outcomes "ChaDon RedSum AffSum TroSwi TroFat TroRev NegSum SelEst"
 	loc controls "LanEng Gen Age30 Col LocUrb LocSub IncHigh UnEmp Afr Pol TreExpRac"
 	loc hetvars "Col IncHigh UnEmp Afr Pol TreExpRac"
 
@@ -261,7 +268,8 @@ OUTPUT: 		MS_Pilot.dta
 
 *3. Treatment effect
 
-	foreach control of varlist `controls' {						// Create control vector
+	*Create control vector
+	foreach control of varlist `controls' {
 
 		sum `control'
 		gen `control'Xtreat = (`control' - `r(mean)') * TreIat
@@ -272,12 +280,16 @@ OUTPUT: 		MS_Pilot.dta
 
 	foreach outcome of varlist `outcomes' {
 
-		reg `outcome' TreIat, vce(cl responseid)				// Main treatment effect
-		reg `outcome' TreIat `controls', vce(cl responseid)		// Covariate adjustment
+	*Main treatment effects
+		reg `outcome' TreIat, vce(cl responseid)
 
+	*Covariate adjusted treatment effects
+		reg `outcome' TreIat `controls', vce(cl responseid)
+
+	*Heterogeneous treatment effects
 		foreach het of varlist `hetvars' {
 
-			reg `outcome' i.TreIat##i.`het', vce(cl responseid)	// Heterogeneity
+			reg `outcome' i.TreIat##i.`het', vce(cl responseid)
 
 		}
 
