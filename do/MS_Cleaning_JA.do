@@ -55,6 +55,8 @@ OUTPUT: 		MS_Pilot.dta
 
 	ren q1_text LanOtr
 
+	gen LanEng = Lan == 1
+
 	ren q2 Gen
 	recode Gen (1 = 1) (2 = 0) (nonm = .)
 	la def gen 0 "Male" 1 "Female"
@@ -62,21 +64,31 @@ OUTPUT: 		MS_Pilot.dta
 
 	gen Age =  2016 - (1920 + q3)
 
+	gen Age30 = Age > 30 if ~mi(Age)
+
 	ren q4 Edu
 	la def edu 1 "Primary School" 2 "High School or equivalent" 3 "Vocational/Technical School (2 year)" 4 "Some College" 5 "College Graduate (4 year)" 6 "Master's Degree (MS)" 7 "Doctoral Degree (PhD)" 8 "Professional Degree (MD, JD, etc.)"
 	la val Edu edu
-	gen Col = Edu > 3
+
+	gen Col = Edu > 3 if ~mi(Edu)
 
 	ren q5 Loc
 	la def loc 1 "Urban" 2 "Suburban" 3 "Rural"
+
+	gen LocUrb = Loc == 1 if ~mi(Loc)
+	gen LocSub = Loc == 2 if ~mi(Loc)
 
 	ren q6 Inc
 	la def inc 1 "Under $10,000" 2 "$10,000 - $19,999" 3 "$20,000 - $29,999" 4 "$30,000 - $39,999" 5 "$40,000 - $49,999" 6 "$50,000 - $74,999" 7 "$75,000 - $99,999" 8 "$100,000 - $150,000" 9 "Over $150,000"
 	la val Inc inc
 
+	gen IncHigh = Inc > 5 if ~mi(Inc)
+
 	ren q7 Emp
 	la def emp 1 "Employed, full time" 2 "Employed, part time" 3 "Retired" 4 "Unemployed"
 	la val Emp emp
+
+	gen UnEmp = Emp == 4 if ~mi(Emp)
 
 	ren q8 Rac
 	la def rac 1 "Hispanic or Latino" 2 "Black or African American" 3 "American Indian or Alaska Native" 4 "White" 5 "Asian" 6 "Native Hawaiian or Pacific Islander"
@@ -105,7 +117,7 @@ OUTPUT: 		MS_Pilot.dta
 	destring q13, replace
 	rename q13 TreIat
 	recode TreIat (2=1)(.=0)
-	label define treiat 1 "Received IAT results implying racism" 0 "Didn't IAT results implying racism"
+	label define treiat 1 "Received IAT results implying racism" 0 "Didn't receive IAT results implying racism"
 	lab var TreIat treiat
 
 	*Affect and self-esteem
@@ -187,12 +199,18 @@ OUTPUT: 		MS_Pilot.dta
 
 	*Cleaning variable labels
 	label variable Lan       "What is your primary language (i.e., the one you speak most of the time)?"
+	label variable LanEng	 "English is primary language"
 	label variable LanOtr    "If language is other: specify"
 	label variable Gen       "What is your gender?"
+	label variable Age30	 "Over 30 years old"
 	label variable Edu       "Please indicate the highest level of education you have completed."
 	label variable Loc       "Which of the following best describes the area you live in?"
+	label variable LocUrb 	 "Lives in urban locality"
+	label variable LocSub	 "Lives in suburban locality"
 	label variable Inc       "Please indicate your current household income in U.S. dollars"
+	label variable IncHigh   "Annual income over USD 50,000"
 	label variable Emp       "What best describes your employment status?"
+	label variable UnEmp     "Unemployed"
 	label variable Rac       "With which racial group do you most identify with?"
 	label variable Pol       "Would you describe yourself as politically leaning more liberal or more con"
 	label variable ExpRac    "Are you a racist?"
@@ -228,16 +246,49 @@ OUTPUT: 		MS_Pilot.dta
 	label variable TreIat    "Exposure to IAT treatment"
 
 	*Removing extraneous variables and ordering
-	keep Lan LanOtr Gen Edu Col Age Loc Inc Emp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis SelEst ChaDon TroSwi TroFat RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum  duration
-	order Lan LanOtr Gen Edu Col Age Loc Inc Emp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis SelEst ChaDon TroSwi TroFat RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum  duration
+	keep responseid duration Lan LanOtr LanEng Gen Edu Col Age* Loc* Inc* Emp UnEmp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis NegSum SelEst ChaDon TroSwi TroFat TroRev RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum
+	order responseid duration Lan LanOtr LanEng Gen Edu Col Age* Loc* Inc* Emp UnEmp Rac Afr Pol TreExpRac ExpRac TreIat NegAfi NegUps NegNer NegDis NegSum SelEst ChaDon TroSwi TroFat TroRev RedRes RedBen RedObl RedWel RedExp RedDep RedSum AffFai AffEdu AffHir AffCom AffSum
 
-////////////////////////
-// Test for selection //
-////////////////////////
 
-loc outcomes "ChaDon RedSum AffSum TroRev"
-loc controlvars ""
+*2. Test for selection
 
-//////////////////////
-// Treatment effect //
-//////////////////////
+	loc outcomes "ChaDon RedSum AffSum TroRev NegSum SelEst"
+	loc controls "LanEng Gen Age30 Col LocUrb LocSub IncHigh UnEmp Afr Pol TreExpRac"
+	loc hetvars "Col IncHigh UnEmp Afr Pol TreExpRac"
+
+	reg TreIat `controls', vce(cl responseid)
+	reg TreExpRac `controls', vce(cl responseid)
+
+*3. Treatment effect
+
+	foreach control of varlist `controls' {						// Create control vector
+
+		sum `control'
+		gen `control'Xtreat = (`control' - `r(mean)') * TreIat
+		loc controls "`controls' `control'Xtreat"
+
+	}
+
+
+	foreach outcome of varlist `outcomes' {
+
+		reg `outcome' TreIat, vce(cl responseid)				// Main treatment effect
+		reg `outcome' TreIat `controls', vce(cl responseid)		// Covariate adjustment
+
+		foreach het of varlist `hetvars' {
+
+			reg `outcome' i.TreIat##i.`het', vce(cl responseid)	// Heterogeneity
+
+		}
+
+	}
+
+*4. Randomization inference
+
+	set seed 95594731
+
+	foreach outcome of varlist `outcomes' {
+
+		permute TreIat beta = _b[TreIat], reps(10000): reg `outcome' TreIat, vce(cl responseid)
+
+	}
